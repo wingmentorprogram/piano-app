@@ -1,0 +1,7 @@
+{
+  "name": "Piano Muse AI",
+  "description": "Real-time piano accompaniment assistant that generates chords and lyrics as you play, and analyzes songs from links.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
