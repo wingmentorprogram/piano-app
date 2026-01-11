@@ -1,9 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Search, Youtube, Music, ArrowRight, Loader2, Clock, Trash2, FileMusic } from 'lucide-react';
+import { Search, Youtube, Music, ArrowRight, Loader2, Clock, Trash2, FileMusic, Video, BookOpen } from 'lucide-react';
 import { SongAnalysisResult, HistoryItem } from '../types';
 
 const API_KEY = process.env.API_KEY || '';
+
+const getYoutubeId = (url: string) => {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+};
+
+const getSpotifyId = (url: string) => {
+  const regExp = /open\.spotify\.com\/track\/([a-zA-Z0-9]+)/;
+  const match = url.match(regExp);
+  return match ? match[1] : null;
+};
+
+const getMusescoreUrl = (url: string) => {
+  // Matches https://musescore.com/user/USERID/scores/SCOREID
+  const regExp = /musescore\.com\/user\/\d+\/scores\/\d+/;
+  const match = url.match(regExp);
+  return match ? `https://${match[0]}/embed` : null;
+};
 
 const SongAnalyzer: React.FC = () => {
   const [query, setQuery] = useState('');
@@ -59,18 +78,21 @@ const SongAnalyzer: React.FC = () => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: API_KEY });
+      const videoId = getYoutubeId(query);
+      const spotifyId = getSpotifyId(query);
+      const musescoreUrl = getMusescoreUrl(query);
       
       const prompt = `
         Analyze the song identified by: "${query}".
-        I need a structured "Music Sheet" format.
+        I need a structured "Music Sheet" format suitable for segment learning.
         
         Provide the following:
         1. Title, Artist, Key.
         2. Main Chords used.
-        3. BREAKDOWN BY SECTIONS. This is critical.
-           - Identify sections like "Verse 1", "Chorus", "Bridge", "Intro", "Outro", and "Riff" (for instrumental chord progressions).
-           - For each section, provide the lyrics with chords interleaved in brackets, e.g., "[Am] Hello world [C]".
-           - If a section is a RIFF or INSTRUMENTAL, strictly label it as "Riff" and provide the chord progression.
+        3. BREAKDOWN BY SECTIONS.
+           - Identify sections like "Verse 1", "Chorus", "Bridge".
+           - Provide lyrics with chords interleaved, e.g., "[Am] Hello [C]".
+           - CRITICAL: Provide an estimated "startTime" (e.g. "0:00", "0:45") for each section based on the studio version structure if possible.
 
         Return valid JSON:
         {
@@ -79,9 +101,8 @@ const SongAnalyzer: React.FC = () => {
           "key": "string",
           "chords": ["string", "string"],
           "sections": [
-             { "type": "Verse", "content": "[Am] Line 1..." },
-             { "type": "Chorus", "content": "[C] Chorus line..." },
-             { "type": "Riff", "content": "[G] [D] [Em] [C]" }
+             { "type": "Verse", "content": "[Am] Line 1...", "startTime": "0:15" },
+             { "type": "Chorus", "content": "[C] Chorus line...", "startTime": "0:50" }
           ]
         }
       `;
@@ -99,6 +120,10 @@ const SongAnalyzer: React.FC = () => {
 
       try {
         const parsed = JSON.parse(text) as SongAnalysisResult;
+        if (videoId) parsed.videoId = videoId;
+        if (spotifyId) parsed.spotifyId = spotifyId;
+        if (musescoreUrl) parsed.musescoreUrl = musescoreUrl;
+        
         setResult(parsed);
         saveToHistory(parsed);
       } catch (e) {
@@ -121,7 +146,7 @@ const SongAnalyzer: React.FC = () => {
           Song Analyzer
         </h2>
         <p className="text-slate-500 text-lg">
-          Turn any YouTube link into a playable chord sheet with sections and riffs.
+          Turn any YouTube, Spotify, or MuseScore link into a playable chord sheet.
         </p>
       </div>
 
@@ -129,14 +154,14 @@ const SongAnalyzer: React.FC = () => {
         <div className="absolute -inset-1 bg-gradient-to-r from-blue-400 to-indigo-400 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
         <div className="relative bg-white rounded-xl p-2 flex items-center shadow-xl border border-slate-100">
           <div className="p-3 text-slate-400">
-            {query.includes('youtube.com') || query.includes('youtu.be') ? <Youtube className="text-red-500" /> : <Search />}
+            {query.includes('spotify') ? <Music className="text-green-500" /> : query.includes('youtu') ? <Youtube className="text-red-500" /> : <Search />}
           </div>
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-            placeholder="Search song or paste YouTube URL..."
+            placeholder="Search song, or paste URL..."
             className="w-full bg-transparent text-slate-900 placeholder-slate-400 border-none outline-none text-lg px-2"
           />
           <button
@@ -165,6 +190,23 @@ const SongAnalyzer: React.FC = () => {
                 <p className="text-blue-600 text-lg flex items-center gap-2 font-medium">
                   <Music size={20} /> {result.artist}
                 </p>
+                <div className="flex gap-2 mt-2">
+                    {result.videoId && (
+                        <div className="flex items-center gap-1 text-xs text-red-500 bg-red-50 px-2 py-1 rounded w-fit">
+                            <Video size={12} /> YouTube
+                        </div>
+                    )}
+                    {result.spotifyId && (
+                        <div className="flex items-center gap-1 text-xs text-green-500 bg-green-50 px-2 py-1 rounded w-fit">
+                            <Music size={12} /> Spotify
+                        </div>
+                    )}
+                    {result.musescoreUrl && (
+                        <div className="flex items-center gap-1 text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded w-fit">
+                            <BookOpen size={12} /> MuseScore
+                        </div>
+                    )}
+                </div>
               </div>
               <div className="mt-4 md:mt-0 flex flex-col items-end gap-2">
                  <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
@@ -182,24 +224,46 @@ const SongAnalyzer: React.FC = () => {
             </div>
           </div>
 
+          {/* MuseScore Embed */}
+          {result.musescoreUrl && (
+             <div className="p-8 bg-slate-50 border-b border-slate-200">
+                <div className="rounded-xl overflow-hidden shadow-lg bg-white relative w-full h-[500px]">
+                    <iframe 
+                        id="score-iframe"
+                        src={result.musescoreUrl}
+                        className="absolute inset-0 w-full h-full border-0"
+                        allowFullScreen
+                        allow="autoplay; fullscreen"
+                    ></iframe>
+                </div>
+             </div>
+          )}
+
           {/* Music Sheet Body */}
           <div className="p-8 space-y-8 bg-white">
             {result.sections ? (
               result.sections.map((section, idx) => (
-                <div key={idx} className="relative pl-6 border-l-4 border-slate-200 hover:border-blue-400 transition-colors">
+                <div key={idx} className="relative pl-6 border-l-4 border-slate-200 hover:border-blue-400 transition-colors group">
                   <div className="absolute -left-[14px] top-0 bg-white p-1">
                      {section.type === 'Chorus' && <span className="block w-2 h-2 rounded-full bg-blue-500"></span>}
                      {section.type === 'Verse' && <span className="block w-2 h-2 rounded-full bg-slate-400"></span>}
                      {section.type === 'Riff' && <span className="block w-2 h-2 rounded-full bg-pink-500"></span>}
                   </div>
                   
-                  <h4 className={`text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-2
-                    ${section.type === 'Chorus' ? 'text-blue-600' : 
-                      section.type === 'Riff' ? 'text-pink-600' : 'text-slate-500'}`}
-                  >
-                    {section.type}
-                    {section.type === 'Riff' && <span className="text-[10px] bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full">INSTRUMENTAL</span>}
-                  </h4>
+                  <div className="flex justify-between items-start mb-3">
+                    <h4 className={`text-sm font-bold uppercase tracking-wider flex items-center gap-2
+                        ${section.type === 'Chorus' ? 'text-blue-600' : 
+                        section.type === 'Riff' ? 'text-pink-600' : 'text-slate-500'}`}
+                    >
+                        {section.type}
+                        {section.type === 'Riff' && <span className="text-[10px] bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full">INSTRUMENTAL</span>}
+                    </h4>
+                    {section.startTime && (
+                         <span className="text-xs font-mono bg-slate-100 text-slate-500 px-2 py-1 rounded flex items-center gap-1">
+                            <Clock size={10} /> {section.startTime}
+                         </span>
+                    )}
+                  </div>
                   
                   <div className="font-mono text-lg leading-loose text-slate-700 whitespace-pre-wrap">
                     {section.content.split(/(\[.*?\])/g).map((part, i) => {
@@ -240,7 +304,7 @@ const SongAnalyzer: React.FC = () => {
               >
                 <div className="flex items-center gap-4">
                    <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
-                     <FileMusic size={20} />
+                     {item.data.videoId ? <Video size={20} /> : item.data.spotifyId ? <Music size={20} /> : item.data.musescoreUrl ? <BookOpen size={20} /> : <FileMusic size={20} />}
                    </div>
                    <div>
                      <h4 className="font-bold text-slate-800">{item.data.title}</h4>
